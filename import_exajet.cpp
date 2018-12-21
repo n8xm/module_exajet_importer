@@ -26,11 +26,26 @@
 using namespace ospray;
 using namespace ospray::sg;
 
+struct HexSphere{
+  vec3f center;
+  float radius;
+};
 
 struct Hexahedron {  
   vec3i lower;                                                              
   int level;                                                              
-}; 
+  
+  HexSphere getHexSphere(){
+    HexSphere hs; 
+    int size = 1 << level;
+    hs.radius = size * 0.5;
+    hs.center = lower + vec3f(hs.radius);
+    return hs;
+  }
+
+};
+
+
 
 struct Box {                                                                       
   std::array<int, 3> lower, upper;                                                 
@@ -74,7 +89,7 @@ void importExaJet(const std::shared_ptr<Node> world, const FileName fileName){
   }       
 
 
-  ospcommon::containers::AlignedVector<vec3i> points;
+  ospcommon::containers::AlignedVector<vec4f> points;
   ospcommon::containers::AlignedVector<vec4uc> colors;
 
   points.reserve(num_hexes);
@@ -83,12 +98,28 @@ void importExaJet(const std::shared_ptr<Node> world, const FileName fileName){
   Hexahedron *hexes = static_cast<Hexahedron*>(mapping);                           
   std::unordered_map<int, Box> level_bounds;                                    
   for (size_t i = 0; i < num_hexes; ++i) {                                      
-    const Hexahedron &h = hexes[i];                                             
+    Hexahedron &h = hexes[i];                                             
     level_bounds[h.level].extend(h.lower.x, h.lower.y, h.lower.z);      
 
-    points.push_back(h.lower);          
+    HexSphere hs = h.getHexSphere();
 
-    vec3f c = vec3f(1.0);
+    points.push_back(vec4f(hs.center,hs.radius));
+    //points.push_back(vec3f(h.lower.x,h.lower.y,h.lower.z));          
+
+    vec3f c;
+    switch(h.level){
+      case 3:
+        c = vec3f(1.0,0.0,0.0);
+        break;
+      case 4:
+        c = vec3f(0.0,1.0,0.0);
+        break;
+      case 5:
+        c = vec3f(0.0,0.0,1.0);
+        break;
+      default:
+        c = vec3f(1.0,1.0,0.0);
+    }
     colors.push_back(vec4uc(c.x * 255.0, c.y * 255.0, c.z * 255.0, 255));                
   }                                                                             
                                                                                 
@@ -99,14 +130,15 @@ void importExaJet(const std::shared_ptr<Node> world, const FileName fileName){
   close(fd); 
 
   auto exajetGeom = createNode(fileName, "Spheres")->nodeAs<Spheres>();
-  exajetGeom->createChild("bytes_per_sphere", "int", int(sizeof(vec3i)));
+  exajetGeom->createChild("bytes_per_sphere", "int", int(sizeof(vec4f)));
   exajetGeom->createChild("offset_center", "int", int(0));
   exajetGeom->createChild("radius", "float", 0.5f);
+  exajetGeom->createChild("offset_radius", "int", int(sizeof(vec3f)));
 
   auto materials = exajetGeom->child("materialList").nodeAs<MaterialList>();
   materials->item(0)["Ks"] = vec3f(0.f);
 
-  auto spheres = std::make_shared<DataVectorT<vec3i, OSP_RAW>>();
+  auto spheres = std::make_shared<DataVectorT<vec4f, OSP_RAW>>();
   spheres->setName("spheres");
   spheres->v = std::move(points);
 
