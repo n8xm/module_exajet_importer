@@ -63,14 +63,14 @@ void importExaJet(const std::shared_ptr<Node> world, const FileName fileName){
   struct stat stat_buf = {0};                                                      
   fstat(fd, &stat_buf);                                                            
   const size_t num_hexes = stat_buf.st_size / sizeof(Hexahedron);                  
-  std::cout << "File " << argv[1] << "\n"                                          
+  std::cout << "File " << filename.c_str() << "\n"                                          
     << "size: " << stat_buf.st_size << "\n"                                        
     << "#hexes: " << num_hexes << "\n";                                            
   void *mapping = mmap(NULL, stat_buf.st_size, PROT_READ, MAP_PRIVATE, fd, 0);  
   if (mapping == MAP_FAILED) {                                                     
     std::cout << "Failed to map file\n";                                           
     perror("mapping file");                                                        
-    return 1;                                                                      
+    return;                                                                      
   }       
 
 
@@ -89,7 +89,6 @@ void importExaJet(const std::shared_ptr<Node> world, const FileName fileName){
     points.push_back(h.lower);          
 
     vec3f c = vec3f(1.0);
-    points.push_back(p);
     colors.push_back(vec4uc(c.x * 255.0, c.y * 255.0, c.z * 255.0, 255));                
   }                                                                             
                                                                                 
