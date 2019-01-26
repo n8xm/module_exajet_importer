@@ -26,7 +26,7 @@
 #include "ospcommon/xml/XML.h"
 #include "ospray/ospray.h"
 
-
+#include "sparsepp/spp.h"
 #include "TAMRData.h"
 
 
@@ -136,6 +136,25 @@ void importExaJet(const std::shared_ptr<Node> world, const FileName fileName){
 
 }
 
+struct HexVert {
+  size_t x, y, z;
+  HexVert() : x(-1), y(-1), z(-1) {}
+  HexVert(size_t x, size_t y, size_t z) : x(x), y(y), z(z) {}
+  HexVert(const vec3i &v) : x(v.x), y(v.y), z(v.z) {}
+};
+
+bool operator==(const HexVert &a, const HexVert &b) {
+  return a.x == b.x && a.y == b.y && a.z == b.z;
+}
+
+struct HashHexVert {
+  // Hard to really decide how to hash each vert to a unique index,
+  // due to the AMR layout..
+  size_t operator()(const HexVert &a) const {
+    return a.x + (1270848 - 1232128) * (a.y + a.z * (1277952 - 1259072));
+  }
+};
+
 void importUnstructured(const std::shared_ptr<Node> world, const FileName fileName){
   // Open the hexahedron data file
   int hexFd = open(fileName.c_str(), O_RDONLY);
@@ -179,45 +198,47 @@ void importUnstructured(const std::shared_ptr<Node> world, const FileName fileNa
   const int desiredLevel = -1;
   const size_t memLimit = 0;//size_t(5)*size_t(1024)*size_t(1024)*size_t(1024);
 
-  for (size_t i = 0; i < numHexes; ++i) {
+  // TODO: Using this vertex index re-mapping will help us save
+  // a ton of memory and indices by re-using existing vertices, but will
+  // really hurt load performance.
+  spp::sparse_hash_map<HexVert, int32_t, HashHexVert> vertsMap;
+
+  for (size_t i = 1; i < numHexes; ++i) {
     const Hexahedron &h = hexes[i];
+    if (verts.size() + 8 >= std::numeric_limits<int32_t>::max()) {
+      std::cout << "Index size limit reached, terminating mesh load\n";
+      break;
+    }
     if (desiredLevel == -1 || h.level == desiredLevel) {
       // Pretty inefficient, no vertex re-use, but rendering the octree AMR
       // as an unstructured mesh is a bad route anyways that we won't do beyond
       // quick testing/previewing
       const vec3i hexSize = vec3i(1 << h.level);
-      const vec3i upper = h.lower + hexSize;
+
       // Verts ordering for a hex cell:
       // four bottom verts counter-clockwise
-      vec4i idx;
-      idx.x = verts.size();
-      verts.push_back(vec3f(h.lower));
-
-      idx.y = verts.size();
-      verts.push_back(vec3f(upper.x, h.lower.y, h.lower.z));
-
-      idx.z = verts.size();
-      verts.push_back(vec3f(upper.x, upper.y, h.lower.z));
-
-      idx.w = verts.size();
-      verts.push_back(vec3f(h.lower.x, upper.y, h.lower.z));
-      indices.push_back(idx);
-
-
       // four top verts counter-clockwise
-      idx.x = verts.size();
-      verts.push_back(vec3f(h.lower.x, h.lower.y, upper.z));
+      for (int k = 0; k < 2; ++k) {
+        vec4i idx;
+        for (int j = 0; j < 2; ++j) {
+          for (int i = 0; i < 2; ++i) {
+            // We want to go x_low -> x_hi if y_low, and x_hi -> x_low if y_hi
+            const int x = (i + j) % 2;
+            const vec3i p = h.lower + hexSize * vec3i(x, j, k);
 
-      idx.y = verts.size();
-      verts.push_back(vec3f(upper.x, h.lower.y, upper.z));
-
-      idx.z = verts.size();
-      verts.push_back(vec3f(upper.x, upper.y, upper.z));
-
-      idx.w = verts.size();
-      verts.push_back(vec3f(h.lower.x, upper.y, upper.z));
-      indices.push_back(idx);
-
+            HexVert hexVert(p);
+            auto fnd = vertsMap.find(hexVert);
+            if (fnd == vertsMap.end()) {
+              vertsMap[hexVert] = verts.size();
+              idx[j * 2 + i] = verts.size();
+              verts.push_back(vec3f(p));
+            } else {
+              idx[j * 2 + i] = fnd->second;
+            }
+          }
+        }
+        indices.push_back(idx);
+      }
       cellVals.push_back(cellField[i]);
     }
     const size_t memSize = verts.size() * sizeof(vec3f)
