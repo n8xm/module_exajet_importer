@@ -10,16 +10,17 @@
 #include <vector>
 #include <limits>
 
-#include "common/sg/importer/Importer.h"
-#include "common/sg/transferFunction/TransferFunction.h"
-#include "common/sg/common/Common.h"
-#include "common/sg/geometry/Spheres.h"
+#include "importer/Importer.h"
+#include "transferFunction/TransferFunction.h"
+#include "common/Common.h"
+#include "geometry/Spheres.h"
+#include "volume/Volume.h"
 #include "ospcommon/containers/AlignedVector.h"
 #include "ospcommon/vec.h"
 
 #include "ospcommon/AffineSpace.h"
 #include "ospcommon/box.h"
-#include "ospcommon/math.h"
+#include "ospcommon/ospmath.h"
 #include "ospcommon/memory/malloc.h"
 #include "ospcommon/range.h"
 #include "ospcommon/xml/XML.h"
@@ -135,9 +136,138 @@ void importExaJet(const std::shared_ptr<Node> world, const FileName fileName){
 
 }
 
+void importUnstructured(const std::shared_ptr<Node> world, const FileName fileName){
+  // Open the hexahedron data file
+  int hexFd = open(fileName.c_str(), O_RDONLY);
+  struct stat statBuf = {0};
+  fstat(hexFd, &statBuf);
+  const size_t numHexes = statBuf.st_size / sizeof(Hexahedron);
+  std::cout << "File " << fileName.c_str() << "\n"
+    << "size: " << statBuf.st_size << "\n"
+    << "#hexes: " << numHexes << "\n";
+  void *hexMapping = mmap(NULL, statBuf.st_size, PROT_READ, MAP_PRIVATE, hexFd, 0);
+  if (hexMapping == MAP_FAILED) {
+    std::cout << "Failed to map hexes file\n";
+    perror("hex_mapping file");
+    return;
+  }
+
+  // Open the field data file
+  const std::string cellFieldName = "x_vorticity.bin";
+  const FileName fieldFile = fileName.path() + cellFieldName;
+  std::cout << "Loading field file: " << fieldFile << "\n";
+  int fieldFd = open(fieldFile.c_str(), O_RDONLY);
+  struct stat fieldStatBuf = {0};
+  fstat(fieldFd, &fieldStatBuf);
+  std::cout << "File " << fieldFile.c_str() << "\n"
+    << "size: " << fieldStatBuf.st_size << "\n";
+  void *fieldMapping = mmap(NULL, fieldStatBuf.st_size, PROT_READ,
+                            MAP_PRIVATE, fieldFd, 0);
+  if (fieldMapping == MAP_FAILED) {
+    std::cout << "Failed to map field file\n";
+    perror("field_mapping file");
+    return;
+  }
+
+  ospcommon::containers::AlignedVector<vec3f> verts;
+  ospcommon::containers::AlignedVector<vec4i> indices;
+  ospcommon::containers::AlignedVector<float> cellVals;
+                                                                                   
+  const Hexahedron *hexes = static_cast<const Hexahedron*>(hexMapping);
+  const float *cellField = static_cast<const float*>(fieldMapping);
+
+  const int desiredLevel = -1;
+  const size_t memLimit = 0;//size_t(5)*size_t(1024)*size_t(1024)*size_t(1024);
+
+  for (size_t i = 0; i < numHexes; ++i) {
+    const Hexahedron &h = hexes[i];
+    if (desiredLevel != -1 && h.level == desiredLevel) {
+      // Pretty inefficient, no vertex re-use, but rendering the octree AMR
+      // as an unstructured mesh is a bad route anyways that we won't do beyond
+      // quick testing/previewing
+      const vec3i hexSize = vec3i(1 << h.level);
+      const vec3i upper = h.lower + hexSize;
+      // Verts ordering for a hex cell:
+      // four bottom verts counter-clockwise
+      vec4i idx;
+      idx.x = verts.size();
+      verts.push_back(vec3f(h.lower));
+
+      idx.y = verts.size();
+      verts.push_back(vec3f(upper.x, h.lower.y, h.lower.z));
+
+      idx.z = verts.size();
+      verts.push_back(vec3f(upper.x, upper.y, h.lower.z));
+
+      idx.w = verts.size();
+      verts.push_back(vec3f(h.lower.x, upper.y, h.lower.z));
+      indices.push_back(idx);
+
+
+      // four top verts counter-clockwise
+      idx.x = verts.size();
+      verts.push_back(vec3f(h.lower.x, h.lower.y, upper.z));
+
+      idx.y = verts.size();
+      verts.push_back(vec3f(upper.x, h.lower.y, upper.z));
+
+      idx.z = verts.size();
+      verts.push_back(vec3f(upper.x, upper.y, upper.z));
+
+      idx.w = verts.size();
+      verts.push_back(vec3f(h.lower.x, upper.y, upper.z));
+      indices.push_back(idx);
+
+      cellVals.push_back(cellField[i]);
+    }
+    const size_t memSize = verts.size() * sizeof(vec3f)
+                           + indices.size() * sizeof(vec4i)
+                           + cellVals.size() * sizeof(float);
+    if (memLimit != 0 && memSize >= memLimit) {
+      break;
+    }
+  }
+
+  std::cout << "Imported " << cellVals.size() << " hexahedrons\n";
+
+  munmap(hexMapping, statBuf.st_size);
+  munmap(fieldMapping, fieldStatBuf.st_size);
+  close(hexFd);
+  close(fieldFd);
+
+  auto jet = createNode(fileName, "UnstructuredVolume")->nodeAs<Volume>();
+  jet->createChild("cellFieldName", "string", cellFieldName);
+
+  auto vertsData = std::make_shared<DataVectorT<vec3f, OSP_FLOAT3>>();
+  vertsData->setName("vertices");
+  vertsData->v = std::move(verts);
+
+  auto indicesData = std::make_shared<DataVectorT<vec4i, OSP_INT4>>();
+  indicesData->setName("indices");
+  indicesData->v = std::move(indices);
+
+  auto cellFieldData = std::make_shared<DataVector1f>();
+  cellFieldData->setName("0");
+  cellFieldData->v = std::move(cellVals);
+
+  auto fieldList = std::make_shared<NodeList<DataVector1f>>();
+  fieldList->setName("cellFields");
+  fieldList->push_back(cellFieldData);
+
+  std::vector<sg::Any> cellFieldNames = {cellFieldName};
+  jet->createChild("cellFieldName", "string", cellFieldName).setWhiteList(cellFieldNames);
+
+  jet->add(vertsData);
+  jet->add(indicesData);
+  jet->add(fieldList);
+
+  world->add(jet);
+}
+
 extern "C" OSPRAY_DLLEXPORT void ospray_init_module_exajet_import() {
   std::cout << "Loading NASA exajet importer module\n";
 }
 
 OSPSG_REGISTER_IMPORT_FUNCTION(importExaJet, bin);
+OSPSG_REGISTER_IMPORT_FUNCTION(importUnstructured, jetunstr);
 

@@ -3,10 +3,10 @@
 #include <limits>                                                               
 #include <array>                                                                
 #include <unordered_map>                                                        
-#include "common/sg/importer/Importer.h"
-#include "common/sg/transferFunction/TransferFunction.h"
-#include "common/sg/common/Common.h"
-#include "common/sg/geometry/Spheres.h"
+#include "importer/Importer.h"
+#include "transferFunction/TransferFunction.h"
+#include "common/Common.h"
+#include "geometry/Spheres.h"
 #include "ospcommon/containers/AlignedVector.h"
 #include "ospcommon/vec.h"
 
