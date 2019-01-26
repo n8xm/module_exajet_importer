@@ -181,7 +181,7 @@ void importUnstructured(const std::shared_ptr<Node> world, const FileName fileNa
 
   for (size_t i = 0; i < numHexes; ++i) {
     const Hexahedron &h = hexes[i];
-    if (desiredLevel != -1 && h.level == desiredLevel) {
+    if (desiredLevel == -1 || h.level == desiredLevel) {
       // Pretty inefficient, no vertex re-use, but rendering the octree AMR
       // as an unstructured mesh is a bad route anyways that we won't do beyond
       // quick testing/previewing
