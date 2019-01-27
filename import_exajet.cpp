@@ -151,7 +151,7 @@ struct HashHexVert {
   // Hard to really decide how to hash each vert to a unique index,
   // due to the AMR layout..
   size_t operator()(const HexVert &a) const {
-    return a.x + (1270848 - 1232128) * (a.y + a.z * (1277952 - 1259072));
+    return a.x + 1232128 * (a.y + a.z * 1259072);
   }
 };
 
@@ -172,7 +172,7 @@ void importUnstructured(const std::shared_ptr<Node> world, const FileName fileNa
   }
 
   // Open the field data file
-  const std::string cellFieldName = "x_vorticity.bin";
+  const std::string cellFieldName = "y_vorticity.bin";
   const FileName fieldFile = fileName.path() + cellFieldName;
   std::cout << "Loading field file: " << fieldFile << "\n";
   int fieldFd = open(fieldFile.c_str(), O_RDONLY);
@@ -195,13 +195,15 @@ void importUnstructured(const std::shared_ptr<Node> world, const FileName fileNa
   const Hexahedron *hexes = static_cast<const Hexahedron*>(hexMapping);
   const float *cellField = static_cast<const float*>(fieldMapping);
 
-  const int desiredLevel = -1;
+  const int desiredLevel = 5;
   const size_t memLimit = 0;//size_t(5)*size_t(1024)*size_t(1024)*size_t(1024);
 
   // TODO: Using this vertex index re-mapping will help us save
   // a ton of memory and indices by re-using existing vertices, but will
   // really hurt load performance.
+#if 0
   spp::sparse_hash_map<HexVert, int32_t, HashHexVert> vertsMap;
+#endif
 
   for (size_t i = 1; i < numHexes; ++i) {
     const Hexahedron &h = hexes[i];
@@ -224,8 +226,9 @@ void importUnstructured(const std::shared_ptr<Node> world, const FileName fileNa
           for (int i = 0; i < 2; ++i) {
             // We want to go x_low -> x_hi if y_low, and x_hi -> x_low if y_hi
             const int x = (i + j) % 2;
-            const vec3i p = h.lower + hexSize * vec3i(x, j, k);
+            vec3i p = h.lower + hexSize * vec3i(x, j, k);
 
+#if 0
             HexVert hexVert(p);
             auto fnd = vertsMap.find(hexVert);
             if (fnd == vertsMap.end()) {
@@ -235,6 +238,11 @@ void importUnstructured(const std::shared_ptr<Node> world, const FileName fileNa
             } else {
               idx[j * 2 + i] = fnd->second;
             }
+#else
+            idx[j * 2 + i] = verts.size();
+            p -= vec3i(1232128, 1259072, 1238336);
+            verts.push_back(vec3f(p) * vec3f(0.0005) - vec3f(1.73575, 9.44, 3.73281));
+#endif
           }
         }
         indices.push_back(idx);
