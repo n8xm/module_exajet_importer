@@ -201,9 +201,14 @@ void importUnstructured(const std::shared_ptr<Node> world, const FileName fileNa
   // TODO: Using this vertex index re-mapping will help us save
   // a ton of memory and indices by re-using existing vertices, but will
   // really hurt load performance.
-#if 0
+//#define REMAP_INDICES
+#ifdef REMAP_INDICES
   spp::sparse_hash_map<HexVert, int32_t, HashHexVert> vertsMap;
 #endif
+
+  const vec3i gridMin = vec3i(1232128, 1259072, 1238336);
+  const float voxelScale = 0.0005;
+  const vec3f worldMin = vec3f(-1.73575, -9.44, -3.73281);
 
   for (size_t i = 1; i < numHexes; ++i) {
     const Hexahedron &h = hexes[i];
@@ -226,22 +231,22 @@ void importUnstructured(const std::shared_ptr<Node> world, const FileName fileNa
           for (int i = 0; i < 2; ++i) {
             // We want to go x_low -> x_hi if y_low, and x_hi -> x_low if y_hi
             const int x = (i + j) % 2;
-            vec3i p = h.lower + hexSize * vec3i(x, j, k);
+            const vec3i p = h.lower + hexSize * vec3i(x, j, k);
+            const vec3f worldPos = vec3f(p - gridMin) * voxelScale + worldMin;
 
-#if 0
+#ifdef REMAP_INDICES
             HexVert hexVert(p);
             auto fnd = vertsMap.find(hexVert);
             if (fnd == vertsMap.end()) {
               vertsMap[hexVert] = verts.size();
               idx[j * 2 + i] = verts.size();
-              verts.push_back(vec3f(p));
+              verts.push_back(worldPos);
             } else {
               idx[j * 2 + i] = fnd->second;
             }
 #else
             idx[j * 2 + i] = verts.size();
-            p -= vec3i(1232128, 1259072, 1238336);
-            verts.push_back(vec3f(p) * vec3f(0.0005) - vec3f(1.73575, 9.44, 3.73281));
+            verts.push_back(worldPos);
 #endif
           }
         }
