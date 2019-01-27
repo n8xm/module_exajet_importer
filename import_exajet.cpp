@@ -195,13 +195,13 @@ void importUnstructured(const std::shared_ptr<Node> world, const FileName fileNa
   const Hexahedron *hexes = static_cast<const Hexahedron*>(hexMapping);
   const float *cellField = static_cast<const float*>(fieldMapping);
 
-  const int desiredLevel = 5;
+  const int desiredLevel = -1;
   const size_t memLimit = 0;//size_t(5)*size_t(1024)*size_t(1024)*size_t(1024);
 
   // TODO: Using this vertex index re-mapping will help us save
   // a ton of memory and indices by re-using existing vertices, but will
   // really hurt load performance.
-//#define REMAP_INDICES
+#define REMAP_INDICES
 #ifdef REMAP_INDICES
   spp::sparse_hash_map<HexVert, int32_t, HashHexVert> vertsMap;
 #endif
