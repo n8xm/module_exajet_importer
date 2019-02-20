@@ -3,10 +3,10 @@
 To run in the example viewer
 #Render the hexadron with particle
 
-'''bash
+```bash
 ./ospExampleViewer --module exajet_import \
  --import:bin:/usr/sci/data/ospray/exajet-d12/hexas.bin
-'''
+```
 
 
 
