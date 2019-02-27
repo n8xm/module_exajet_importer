@@ -83,6 +83,9 @@ inline vec3f findColorForValue(std::vector<float> colors, int i, int N, bool isR
 }
 
 
+//NATHAN: Looks like this maps to the Exajet file format. It specifies:
+//* The lower left corner of the hex.
+//* The AMR level.
 struct Hexahedron
 {
   vec3i lower;
@@ -348,6 +351,14 @@ void importUnstructured(const std::shared_ptr<Node> world, const FileName fileNa
   close(hexFd);
   close(fieldFd);
 
+  //NATHAN: Here is where we create the unstructured volume. This code uses
+  //OSPRay's scene graph functionality. We should probably avoid using OSPRay's
+  //scene graph for now because we are starting out by rendering just one volume.
+  //Furthermore, Will ays that the scene graph is poorly documented (I think
+  //that's what he said?)  
+ 
+  //NATHAN: "Jet" appears to refer to the jet airplane in the data set, not the
+  //"jet" colormap.
   auto jet = createNode(fileName, "UnstructuredVolume")->nodeAs<Volume>();
   jet->createChild("cellFieldName", "string", cellFieldName);
 
@@ -363,6 +374,7 @@ void importUnstructured(const std::shared_ptr<Node> world, const FileName fileNa
   cellFieldData->setName("0");
   cellFieldData->v = std::move(cellVals);
 
+  //NATHAN: Since we are using cellField, I believe that we are using cell-centered data here.
   auto fieldList = std::make_shared<NodeList<DataVector1f>>();
   fieldList->setName("cellFields");
   fieldList->push_back(cellFieldData);
